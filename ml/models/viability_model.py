@@ -60,7 +60,7 @@ class ViabilityModel(BaseModel):
     # PREDICT PROBABILITY
     # ============================================================
     def predict_proba(self, X: pd.DataFrame):
-        self._check_features(X)
+        self._check_features(X.copy())
         return self.model.predict_proba(X)[:, 1]
 
     # ============================================================
@@ -101,7 +101,10 @@ class ViabilityModel(BaseModel):
     # INTERNAL CHECK
     # ============================================================
     def _check_features(self, X: pd.DataFrame):
-        if list(X.columns) != self.feature_names:
-            raise ValueError(
-                f"Feature mismatch.\nExpected: {self.feature_names}\nGot: {list(X.columns)}"
-            )
+        missing = set(self.feature_names) - set(X.columns)
+        extra = set(X.columns) - set(self.feature_names)
+        
+        for c in missing:
+            X[c] = 0.0
+    
+        X = X[self.feature_names]

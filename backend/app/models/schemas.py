@@ -1,4 +1,5 @@
-"""Pydantic schemas for API requests and responses"""
+"""Pydantic schemas for API requests and responses (FULLY UPDATED FOR V3 PIPELINE)
+"""
 
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, validator
@@ -6,8 +7,11 @@ from datetime import datetime
 from enum import Enum
 
 
+# ---------------------------------------------------------
+# ENUMS
+# ---------------------------------------------------------
+
 class AvailabilityStatus(str, Enum):
-    """Product availability status"""
     IN_STOCK = "in_stock"
     LOW_STOCK = "low_stock"
     OUT_OF_STOCK = "out_of_stock"
@@ -15,200 +19,226 @@ class AvailabilityStatus(str, Enum):
 
 
 class RiskLevel(str, Enum):
-    """Stockout risk level"""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
 
 
-# Request Schemas
+# ---------------------------------------------------------
+# PRODUCT INPUT SCHEMA (FULL FEATURE SET)
+# ---------------------------------------------------------
 
 class ProductInput(BaseModel):
-    """Input product data"""
-    sku: str = Field(..., description="Product SKU")
-    product_name: str = Field(..., description="Product name")
-    cost: float = Field(..., gt=0, description="Product cost")
-    price: float = Field(..., gt=0, description="Current price")
-    shipping_cost: float = Field(..., ge=0, description="Shipping cost")
-    lead_time_days: int = Field(..., ge=0, le=365, description="Lead time in days")
-    availability: AvailabilityStatus = Field(..., description="Availability status")
-    description: Optional[str] = Field(None, description="Product description")
-    category: Optional[str] = Field(None, description="Product category")
-    weight_kg: Optional[float] = Field(None, ge=0, description="Weight in kg")
-    length_cm: Optional[float] = Field(None, ge=0, description="Length in cm")
-    width_cm: Optional[float] = Field(None, ge=0, description="Width in cm")
-    height_cm: Optional[float] = Field(None, ge=0, description="Height in cm")
-    map_price: Optional[float] = Field(None, ge=0, description="Minimum Advertised Price")
-    duties: Optional[float] = Field(None, ge=0, description="Duties cost")
-    supplier_name: Optional[str] = Field(None, description="Supplier name")
-    supplier_reliability_score: Optional[float] = Field(None, ge=0, le=1, description="Supplier reliability score")
+    """
+    Full product schema used by all ML models.
+
+    Compatible with training pipeline V3:
+    FEATURES = [
+        price, cost, shipping_cost, duties,
+        lead_time_days, stock, inventory, quantity,
+        demand, past_sales,
+        weight_kg, length_cm, width_cm, height_cm,
+        margin, supplier_reliability_score
+    ]
+    """
+
+    # Required
+    sku: str
+    product_name: str
+    cost: float
+    price: float
+    shipping_cost: float
+    lead_time_days: int
+    availability: AvailabilityStatus
+
+    # Optional but used by ML models
+    duties: Optional[float] = 0.0
+
+    stock: Optional[float] = 0.0
+    inventory: Optional[float] = 0.0
+    quantity: Optional[float] = 0.0
+    demand: Optional[float] = 0.0
+    past_sales: Optional[float] = 0.0
+
+    weight_kg: Optional[float] = 0.0
+    length_cm: Optional[float] = 0.0
+    width_cm: Optional[float] = 0.0
+    height_cm: Optional[float] = 0.0
+
+    supplier_reliability_score: Optional[float] = 0.5  # middle default
+
+    # Optional text fields for clustering
+    description: Optional[str] = None
+    category: Optional[str] = None
+    title: Optional[str] = None
+    name: Optional[str] = None
+
+    # MAP price rules
+    map_price: Optional[float] = None
 
     class Config:
         json_schema_extra = {
             "example": {
-                "sku": "SKU001",
-                "product_name": "Wireless Headphones",
-                "cost": 25.0,
+                "sku": "ABC123",
+                "product_name": "Gaming Mouse",
+                "cost": 20,
                 "price": 49.99,
-                "shipping_cost": 5.0,
+                "shipping_cost": 5,
+                "duties": 1.2,
                 "lead_time_days": 7,
                 "availability": "in_stock",
-                "description": "High-quality wireless headphones",
-                "category": "Electronics",
+                "stock": 50,
+                "inventory": 100,
+                "quantity": 1,
+                "demand": 30,
+                "past_sales": 15,
                 "weight_kg": 0.3,
-                "length_cm": 20.0,
-                "width_cm": 15.0,
-                "height_cm": 8.0,
-                "map_price": 45.0,
-                "duties": 2.5,
+                "length_cm": 12,
+                "width_cm": 6,
+                "height_cm": 4,
+                "supplier_reliability_score": 0.8,
+                "category": "Electronics",
+                "description": "High precision wired gaming mouse"
             }
         }
 
 
+# ---------------------------------------------------------
+# BULK PRODUCT INPUT
+# ---------------------------------------------------------
+
 class BulkProductInput(BaseModel):
-    """Bulk product input for batch processing"""
-    products: List[ProductInput] = Field(..., description="List of products")
+    products: List[ProductInput]
 
     @validator("products")
-    def validate_product_count(cls, v):
-        if len(v) > 10000:
-            raise ValueError("Maximum 10000 products allowed per request")
+    def validate_count(cls, v):
         if len(v) == 0:
-            raise ValueError("At least one product is required")
+            raise ValueError("At least 1 product required")
+        if len(v) > 5000:
+            raise ValueError("Max 5000 products allowed")
         return v
 
 
+# ---------------------------------------------------------
+# REQUEST SCHEMAS
+# ---------------------------------------------------------
+
 class ValidationRequest(BaseModel):
-    """Request for schema validation"""
-    file_id: str = Field(..., description="Uploaded file ID")
+    file_id: str
 
 
 class PredictViabilityRequest(BaseModel):
-    """Request for viability prediction"""
-    products: List[ProductInput] = Field(..., description="List of products to predict")
+    products: List[ProductInput]
 
 
 class OptimizePriceRequest(BaseModel):
-    """Request for price optimization"""
-    products: List[ProductInput] = Field(..., description="List of products to optimize")
-    min_margin_percent: Optional[float] = Field(0.15, ge=0, le=1, description="Minimum margin percentage")
-    enforce_map: Optional[bool] = Field(True, description="Enforce MAP constraints")
+    products: List[ProductInput]
+    min_margin_percent: Optional[float] = Field(0.15, ge=0, le=1)
+    enforce_map: Optional[bool] = True
 
 
 class StockoutRiskRequest(BaseModel):
-    """Request for stockout risk prediction"""
-    products: List[ProductInput] = Field(..., description="List of products to analyze")
+    products: List[ProductInput]
 
 
-# Response Schemas
+# ---------------------------------------------------------
+# RESPONSE SCHEMAS
+# ---------------------------------------------------------
 
 class ValidationError(BaseModel):
-    """Validation error detail"""
-    field: str = Field(..., description="Field name")
-    message: str = Field(..., description="Error message")
-    row: Optional[int] = Field(None, description="Row number if applicable")
+    field: str
+    message: str
+    row: Optional[int] = None
 
 
 class ValidationResponse(BaseModel):
-    """Schema validation response"""
-    is_valid: bool = Field(..., description="Whether schema is valid")
-    errors: List[ValidationError] = Field(default_factory=list, description="Validation errors")
-    warnings: List[str] = Field(default_factory=list, description="Validation warnings")
-    total_rows: int = Field(..., description="Total number of rows")
-    total_columns: int = Field(..., description="Total number of columns")
-    missing_required_fields: List[str] = Field(default_factory=list, description="Missing required fields")
-    missing_optional_fields: List[str] = Field(default_factory=list, description="Missing optional fields")
+    is_valid: bool
+    errors: List[ValidationError] = []
+    warnings: List[str] = []
+    total_rows: int
+    total_columns: int
+    missing_required_fields: List[str] = []
+    missing_optional_fields: List[str] = []
 
 
 class ViabilityPrediction(BaseModel):
-    """Viability prediction result"""
-    sku: str = Field(..., description="Product SKU")
-    viability_score: float = Field(..., ge=0, le=1, description="Probability of sale within 30 days")
-    viability_class: str = Field(..., description="Viability class (high/medium/low)")
-    shap_values: Optional[Dict[str, float]] = Field(None, description="SHAP feature importance values")
+    sku: str
+    viability_score: float
+    viability_class: str
+    shap_values: Optional[Dict[str, float]] = None
 
 
 class ViabilityResponse(BaseModel):
-    """Viability prediction response"""
-    predictions: List[ViabilityPrediction] = Field(..., description="List of predictions")
-    model_version: str = Field(..., description="Model version used")
-    processing_time_seconds: float = Field(..., description="Processing time")
+    predictions: List[ViabilityPrediction]
+    model_version: str
+    processing_time_seconds: float
 
 
 class PriceOptimization(BaseModel):
-    """Price optimization result"""
-    sku: str = Field(..., description="Product SKU")
-    current_price: float = Field(..., description="Current price")
-    recommended_price: float = Field(..., description="Recommended optimized price")
-    expected_profit: float = Field(..., description="Expected profit at recommended price")
-    current_profit: float = Field(..., description="Current profit")
-    profit_improvement: float = Field(..., description="Profit improvement percentage")
-    margin_percent: float = Field(..., description="Margin percentage at recommended price")
-    conversion_probability: float = Field(..., ge=0, le=1, description="Conversion probability at recommended price")
-    map_constraint_applied: bool = Field(..., description="Whether MAP constraint was applied")
-    min_margin_constraint_applied: bool = Field(..., description="Whether min margin constraint was applied")
+    sku: str
+    current_price: float
+    recommended_price: float
+    expected_profit: float
+    current_profit: float
+    profit_improvement: float
+    margin_percent: float
+    conversion_probability: float
+    map_constraint_applied: bool
+    min_margin_constraint_applied: bool
 
 
 class PriceOptimizationResponse(BaseModel):
-    """Price optimization response"""
-    optimizations: List[PriceOptimization] = Field(..., description="List of optimizations")
-    model_version: str = Field(..., description="Model version used")
-    processing_time_seconds: float = Field(..., description="Processing time")
+    optimizations: List[PriceOptimization]
+    model_version: str
+    processing_time_seconds: float
 
 
 class StockoutRiskPrediction(BaseModel):
-    """Stockout risk prediction result"""
-    sku: str = Field(..., description="Product SKU")
-    risk_score: float = Field(..., ge=0, le=1, description="Risk probability score")
-    risk_level: RiskLevel = Field(..., description="Risk level")
-    risk_factors: List[str] = Field(default_factory=list, description="List of risk factors")
-    lead_time_risk: bool = Field(..., description="Whether lead time is a risk factor")
-    availability_risk: bool = Field(..., description="Whether availability is a risk factor")
+    sku: str
+    risk_score: float
+    risk_level: RiskLevel
+    risk_factors: List[str] = []
+    lead_time_risk: bool = False
+    availability_risk: bool = False
 
 
 class StockoutRiskResponse(BaseModel):
-    """Stockout risk prediction response"""
-    predictions: List[StockoutRiskPrediction] = Field(..., description="List of predictions")
-    model_version: str = Field(..., description="Model version used")
-    processing_time_seconds: float = Field(..., description="Processing time")
+    predictions: List[StockoutRiskPrediction]
+    model_version: str
+    processing_time_seconds: float
 
 
 class ProductResult(BaseModel):
-    """Complete product analysis result"""
-    sku: str = Field(..., description="Product SKU")
-    product_name: str = Field(..., description="Product name")
-    viability_score: float = Field(..., ge=0, le=1, description="Viability score")
-    viability_class: str = Field(..., description="Viability class")
-    recommended_price: float = Field(..., description="Recommended price")
-    current_price: float = Field(..., description="Current price")
-    margin_percent: float = Field(..., description="Margin percentage")
-    stockout_risk_score: float = Field(..., ge=0, le=1, description="Stockout risk score")
-    stockout_risk_level: RiskLevel = Field(..., description="Stockout risk level")
-    cluster_id: Optional[int] = Field(None, description="Product cluster ID")
-    rank: int = Field(..., description="Product rank based on viability")
+    sku: str
+    product_name: str
+    viability_score: float
+    viability_class: str
+    recommended_price: float
+    current_price: float
+    margin_percent: float
+    stockout_risk_score: float
+    stockout_risk_level: RiskLevel
+    cluster_id: Optional[int]
+    rank: int
 
 
 class ResultsResponse(BaseModel):
-    """Complete results response"""
-    results: List[ProductResult] = Field(..., description="List of product results")
-    total_products: int = Field(..., description="Total number of products")
-    processing_timestamp: datetime = Field(default_factory=datetime.now, description="Processing timestamp")
-    model_versions: Dict[str, str] = Field(..., description="Model versions used")
+    results: List[ProductResult]
+    total_products: int
+    processing_timestamp: datetime = Field(default_factory=datetime.now)
+    model_versions: Dict[str, str]
 
 
 class UploadResponse(BaseModel):
-    """File upload response"""
-    file_id: str = Field(..., description="Unique file ID")
-    filename: str = Field(..., description="Original filename")
-    file_size_bytes: int = Field(..., description="File size in bytes")
-    total_rows: int = Field(..., description="Total rows in file")
-    upload_timestamp: datetime = Field(default_factory=datetime.now, description="Upload timestamp")
-    message: str = Field(..., description="Upload status message")
+    file_id: str
+    filename: str
+    file_size_bytes: int
+    total_rows: int
+    upload_timestamp: datetime = Field(default_factory=datetime.now)
+    message: str
 
 
 class ErrorResponse(BaseModel):
-    """Error response"""
-    error: str = Field(..., description="Error message")
-    detail: Optional[str] = Field(None, description="Error detail")
-    error_code: Optional[str] = Field(None, description="Error code")
-
+    error: str
+    detail: Optional[str] = None
+    error_code: Optional[str] = None

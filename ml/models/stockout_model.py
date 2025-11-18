@@ -8,12 +8,14 @@ import numpy as np
 import shap
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
+
 from ml.models.base_model import BaseModel
 
 
 class StockoutRiskModel(BaseModel):
     """
     Predicts probability of HIGH stockout risk.
+    Fully compatible with BaseModel (implements predict()).
     """
 
     def __init__(self, config=None):
@@ -27,12 +29,14 @@ class StockoutRiskModel(BaseModel):
         )
 
         self.explainer = None
-        self.feature_names = []
+        self.feature_names: list[str] = []
+        self.is_trained = False
 
     # ============================================================
     # TRAIN
     # ============================================================
     def train(self, X: pd.DataFrame, y: pd.Series):
+        """Train RF classifier and SHAP explainer."""
         self.feature_names = list(X.columns)
 
         self.model.fit(X, y)
@@ -43,52 +47,53 @@ class StockoutRiskModel(BaseModel):
 
         print(f"✔ Stockout Risk model trained (AUC = {auc:.4f})")
 
+        # SHAP explainer
         self.explainer = shap.TreeExplainer(self.model)
 
     # ============================================================
-    # PREDICT LABEL
+    # REQUIRED BY BaseModel
     # ============================================================
     def predict(self, X: pd.DataFrame):
+        """
+        Required abstract method → returns hard labels (0/1).
+        """
         self._check_ready()
-        self._check_features(X)
-        return self.model.predict(X)
+        X_checked = self._align(X)
+        return self.model.predict(X_checked)
 
     # ============================================================
-    # PREDICT PROBA
+    # PROBABILITY PREDICTION
     # ============================================================
     def predict_proba(self, X: pd.DataFrame):
+        """Return probability of high stockout risk."""
         self._check_ready()
-        self._check_features(X)
-        return self.model.predict_proba(X)[:, 1]
+        X_checked = self._align(X)
+        return self.model.predict_proba(X_checked)[:, 1]
 
-    # ============================================================
-    # REQUIRED BY PIPELINE SERVICE
-    # ============================================================
+    # For pipeline service compatibility
     def predict_batch(self, X: pd.DataFrame):
-        self._check_ready()
-        self._check_features(X)
-        return self.model.predict_proba(X)[:, 1]
+        """Alias for pipeline service."""
+        return self.predict_proba(X)
 
     # ============================================================
-    # SHAP
+    # SHAP EXPLANATION
     # ============================================================
     def explain(self, X: pd.DataFrame):
         self._check_ready()
-        self._check_features(X)
+        X_checked = self._align(X)
 
-        shap_values = self.explainer.shap_values(X)[1]
-        base = self.explainer.expected_value
-
-        if isinstance(base, list):
-            base = base[1]
+        shap_values = self.explainer.shap_values(X_checked)[1]
+        base_value = self.explainer.expected_value
+        if isinstance(base_value, list):
+            base_value = base_value[1]
 
         feature_importance = np.abs(shap_values).mean(axis=0)
 
         per_sample = []
-        for i in range(len(X)):
+        for i in range(len(X_checked)):
             per_sample.append({
-                "risk_score": float(self.predict_proba(X.iloc[[i]])[0]),
-                "base_value": float(base),
+                "risk_score": float(self.predict_proba(X_checked.iloc[[i]])[0]),
+                "base_value": float(base_value),
                 "feature_contributions": {
                     f: float(shap_values[i][j])
                     for j, f in enumerate(self.feature_names)
@@ -96,7 +101,7 @@ class StockoutRiskModel(BaseModel):
             })
 
         return {
-            "base_value": float(base),
+            "base_value": float(base_value),
             "feature_importance": {
                 self.feature_names[i]: float(feature_importance[i])
                 for i in range(len(self.feature_names))
@@ -106,14 +111,26 @@ class StockoutRiskModel(BaseModel):
         }
 
     # ============================================================
-    # INTERNAL CHECKS
+    # INTERNAL HELPERS
     # ============================================================
     def _check_ready(self):
         if not self.is_trained:
             raise RuntimeError("StockoutRiskModel must be trained first.")
 
-    def _check_features(self, X: pd.DataFrame):
-        if list(X.columns) != self.feature_names:
-            raise ValueError(
-                f"Feature mismatch.\nExpected: {self.feature_names}\nGot: {list(X.columns)}"
-            )
+    def _align(self, X: pd.DataFrame):
+        """
+        Ensure X columns match training features exactly.
+        Fill missing columns with 0.0.
+        Ignore extra columns.
+        Prevents warnings:
+        'X does not have valid feature names'
+        """
+        X = X.copy()
+
+        for col in self.feature_names:
+            if col not in X.columns:
+                X[col] = 0.0
+
+        X = X[self.feature_names]
+
+        return X

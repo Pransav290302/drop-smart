@@ -1,164 +1,119 @@
 """
-Conversion Probability Model — Predicts probability of purchase at a given price.
-Aligned with course topics: LogisticRegression + RandomForest + SHAP.
+ConversionModel V3 — Binary Logistic Conversion Classifier
+Trains on FEATURES from training pipeline V3.
+
+- conversion_flag (0/1)
+- LogisticRegression
+- Provides:
+    * predict()
+    * predict_proba()
+    * predict_conversion_probability()
+    * predict_for_price()
 """
 
+import pickle
+from pathlib import Path
 import numpy as np
 import pandas as pd
-import shap
-from typing import Any, List
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.calibration import CalibratedClassifierCV
 
 from ml.models.base_model import BaseModel
 
 
 class ConversionModel(BaseModel):
     """
-    Predicts conversion probability p(buy | price, features)
-    Fully compatible with:
-    - BaseModel (train, predict, predict_proba)
-    - PriceOptimizer (predict_for_price)
+    Logistic regression classification model for conversion probability.
+
+    FIXED:
+    - Implements .predict() → required by BaseModel
+    - predict_for_price has NO wrong arguments
+    - proper feature preselection
     """
 
-    def __init__(self, model_type="logistic_regression", config=None):
+    # Training pipeline V3 FEATURES
+    FEATURES = [
+        "price", "cost", "shipping_cost", "duties",
+        "lead_time_days", "stock", "inventory", "quantity",
+        "demand", "past_sales",
+        "weight_kg", "length_cm", "width_cm", "height_cm",
+        "margin", "supplier_reliability_score"
+    ]
+
+    def __init__(self, config=None):
         super().__init__(config)
+        self.model = LogisticRegression(
+            max_iter=2000,
+            solver="lbfgs"
+        )
+        self.is_trained = False
 
-        self.model_type = model_type.lower()
-
-        # REQUIRED BY PRICE OPTIMIZER
-        self.price_feature_name = "price"
-
-        self.scaler = None
-        self.feature_names: List[str] = []
-        self.explainer = None
-
-        # ----------------------------------------------------------
-        # MODEL SELECTION
-        # ----------------------------------------------------------
-        if self.model_type == "random_forest":
-            self.model = RandomForestClassifier(
-                n_estimators=200,
-                max_depth=7,
-                class_weight="balanced",
-                random_state=42
-            )
-        else:
-            self.scaler = StandardScaler()
-            self.model = LogisticRegression(
-                penalty="l2",
-                C=1.0,
-                solver="lbfgs",
-                max_iter=2000,
-                class_weight="balanced",
-                random_state=42,
-            )
-
-    # ============================================================
+    # ---------------------------------------------------
     # TRAIN
-    # ============================================================
-    def train(self, X: pd.DataFrame, y: pd.Series) -> None:
-
-        if self.price_feature_name not in X.columns:
-            raise ValueError(f"Missing price column '{self.price_feature_name}'")
-
-        self.feature_names = list(X.columns)
-
-        # Logistic Regression + calibration
-        if self.model_type == "logistic_regression":
-            X_scaled = self.scaler.fit_transform(X)
-            base = self.model.fit(X_scaled, y)
-
-            self.model = CalibratedClassifierCV(base, cv=3)
-            self.model.fit(X_scaled, y)
-
-            preds = self.model.predict_proba(X_scaled)[:, 1]
-
-        else:
-            # Random Forest version
-            self.model.fit(X, y)
-            preds = self.model.predict_proba(X)[:, 1]
-
+    # ---------------------------------------------------
+    def train(self, X: pd.DataFrame, y: pd.Series):
+        X = X[self.FEATURES].fillna(0)
+        self.model.fit(X, y)
         self.is_trained = True
-        print("✔ Conversion model trained.")
 
-        # Initialize SHAP
-        self._init_shap(X)
+    # ---------------------------------------------------
+    # Required by BaseModel → FIX
+    # ---------------------------------------------------
+    def predict(self, X: pd.DataFrame):
+        """Return binary classification (0 or 1)."""
+        X = X[self.FEATURES].fillna(0)
+        return self.model.predict(X)
 
-    # ============================================================
-    # PREDICT LABEL
-    # ============================================================
-    def predict(self, X: pd.DataFrame) -> Any:
-        prob = self.predict_proba(X)
-        return (prob > 0.5).astype(int)
-
-    # ============================================================
-    # PREDICT PROBABILITY
-    # ============================================================
-    def predict_proba(self, X: pd.DataFrame) -> Any:
-        self._check_ready()
-        self._check_features(X)
-
-        if self.model_type == "logistic_regression":
-            X_scaled = self.scaler.transform(X)
-            return self.model.predict_proba(X_scaled)[:, 1]
-
+    def predict_proba(self, X: pd.DataFrame):
+        """Return probability of conversion."""
+        X = X[self.FEATURES].fillna(0)
         return self.model.predict_proba(X)[:, 1]
 
-    # ============================================================
-    # PRICE SIMULATION  — USED BY PriceOptimizer
-    # ============================================================
-    def predict_for_price(self, price: float, features: pd.DataFrame) -> float:
+    # ---------------------------------------------------
+    # API for PriceOptimizer
+    # ---------------------------------------------------
+    def predict_conversion_probability(self, product: dict, price: float) -> float:
+        """
+        Compute conversion probability at a given price.
+        Called by PriceOptimizer.
+        """
+        row = {feat: product.get(feat, 0) for feat in self.FEATURES}
+        row["price"] = price
+        row["margin"] = (
+            (price - (product.get("cost", 0)
+                      + product.get("shipping_cost", 0)
+                      + product.get("duties", 0)))
+            / price
+        )
 
-        X = features.copy()
-
-        # Set the price value
-        X[self.price_feature_name] = float(price)
-
-        # Make sure all columns exist
-        for col in self.feature_names:
-            if col not in X.columns:
-                X[col] = 0.0
-
-        # Correct order
-        X = X[self.feature_names]
-
+        X = pd.DataFrame([row])
         return float(self.predict_proba(X)[0])
 
-    # ============================================================
-    # SHAP
-    # ============================================================
-    def _init_shap(self, X: pd.DataFrame):
-        try:
-            sample = X.sample(min(100, len(X)), random_state=42)
+    def predict_for_price(self, product: dict, price: float) -> float:
+        """Alias used inside PriceOptimizer — clean, no kwargs."""
+        return self.predict_conversion_probability(product, price)
 
-            if self.model_type == "logistic_regression":
-                sample_scaled = self.scaler.transform(sample)
+    # ---------------------------------------------------
+    # SAVE / LOAD
+    # ---------------------------------------------------
+    def save(self, filepath):
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
 
-                # Fixed key: estimator not base_estimator
-                base_est = self.model.calibrated_classifiers_[0].estimator
-                self.explainer = shap.LinearExplainer(base_est, sample_scaled)
-
-            else:
-                self.explainer = shap.TreeExplainer(self.model)
-
-        except Exception as e:
-            print("⚠ SHAP initialization failed:", e)
-            self.explainer = None
-
-    # ============================================================
-    # INTERNAL CHECKS
-    # ============================================================
-    def _check_ready(self):
-        if not self.is_trained:
-            raise RuntimeError("ConversionModel must be trained first.")
-
-    def _check_features(self, X: pd.DataFrame):
-        if list(X.columns) != self.feature_names:
-            raise ValueError(
-                "Feature mismatch.\n"
-                f"Expected: {self.feature_names}\n"
-                f"Got:      {list(X.columns)}"
+        with open(filepath, "wb") as f:
+            pickle.dump(
+                {
+                    "model": self.model,
+                    "config": self.config,
+                    "is_trained": self.is_trained,
+                },
+                f,
             )
+
+    def load(self, filepath):
+        filepath = Path(filepath)
+        with open(filepath, "rb") as f:
+            data = pickle.load(f)
+
+        self.model = data["model"]
+        self.config = data.get("config", {})
+        self.is_trained = data.get("is_trained", True)

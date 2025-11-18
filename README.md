@@ -110,11 +110,3 @@ pytest tests/
 black .
 ```
 
-## License
-
-[Add your license here]
-
-## Authors
-
-Pransav M. Patel, Bilal Qader
-

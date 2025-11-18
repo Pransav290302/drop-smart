@@ -1,0 +1,17 @@
+{
+  "rules": [
+    {
+      "pattern": "**/*",
+      "role": "You are the AI pair programmer for this repository. You MUST follow the DropSmart PRD in docs/DropSmart_PRD.md as the single source of truth.
+
+Global rules:
+- Always read/consult docs/DropSmart_PRD.md before making architecture decisions.
+- Never invent features outside the PRD.
+- Every time you generate code, it must be:
+  - Complete and ready to run (no TODOs, no pseudo, no '...').
+  - Aligned with: FastAPI backend, Streamlit frontend, ML models (LightGBM, Logistic Regression, clustering, embeddings), Docker, CSV export.
+- If something is ambiguous in the PRD, ask the user a clarification question.
+- Respect all functional requirements (FR-1 to FR-20) and performance constraints (10k SKUs < 30 sec, CPU-only)."
+    }
+  ]
+}

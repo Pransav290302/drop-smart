@@ -1,0 +1,44 @@
+# Model Configuration
+
+# Viability Model
+viability:
+  model_type: "lightgbm"  # Options: "lightgbm", "logistic_regression"
+  n_estimators: 100
+  learning_rate: 0.05
+  max_depth: 7
+  min_child_samples: 20
+  class_weight: "balanced"
+  random_state: 42
+
+# Price Optimizer
+price_optimizer:
+  conversion_model_type: "lightgbm"
+  price_range_multiplier: [0.8, 2.0]  # Min and max price as multiplier of cost
+  price_step: 0.01
+  min_margin_percent: 0.15  # 15% minimum margin
+  enforce_map: true
+
+# Stockout Risk Model
+stockout_risk:
+  model_type: "lightgbm"
+  n_estimators: 100
+  learning_rate: 0.05
+  max_depth: 6
+  class_weight: "balanced"
+  risk_threshold: 0.5
+  random_state: 42
+
+# Clustering
+clustering:
+  method: "kmeans"  # Options: "kmeans", "hdbscan"
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  n_clusters: 10
+  min_cluster_size: 5  # For HDBSCAN
+  random_state: 42
+
+# Feature Engineering
+features:
+  lead_time_buckets: [0, 7, 14, 21, 30, 60, 90]  # Days
+  size_tiers: ["small", "medium", "large", "oversized"]
+  volumetric_weight_divisor: 5000  # For dimensional weight calculation
+

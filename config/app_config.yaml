@@ -1,0 +1,34 @@
+# Application Configuration
+app:
+  name: "DropSmart"
+  version: "1.0.0"
+  debug: false
+
+# Backend Configuration
+backend:
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+  workers: 1
+
+# Frontend Configuration
+frontend:
+  port: 8501
+  theme:
+    primary_color: "#1f77b4"
+    background_color: "#ffffff"
+    secondary_background_color: "#f0f2f6"
+
+# Data Paths
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_models: "data/models"
+  data_outputs: "data/outputs"
+
+# Performance
+performance:
+  max_file_size_mb: 50
+  max_skus: 10000
+  processing_timeout_seconds: 300
+

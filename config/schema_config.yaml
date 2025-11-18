@@ -1,0 +1,110 @@
+# Excel Schema Configuration
+
+# Required fields for supplier Excel files
+required_fields:
+  - "sku"
+  - "product_name"
+  - "cost"
+  - "price"
+  - "shipping_cost"
+  - "lead_time_days"
+  - "availability"
+
+# Optional but recommended fields
+optional_fields:
+  - "description"
+  - "category"
+  - "weight_kg"
+  - "length_cm"
+  - "width_cm"
+  - "height_cm"
+  - "map_price"
+  - "duties"
+  - "supplier_name"
+  - "supplier_reliability_score"
+
+# Field types and validation rules
+field_validation:
+  sku:
+    type: "string"
+    required: true
+    unique: true
+  
+  product_name:
+    type: "string"
+    required: true
+    min_length: 1
+    max_length: 500
+  
+  cost:
+    type: "float"
+    required: true
+    min_value: 0
+  
+  price:
+    type: "float"
+    required: true
+    min_value: 0
+  
+  shipping_cost:
+    type: "float"
+    required: true
+    min_value: 0
+  
+  lead_time_days:
+    type: "integer"
+    required: true
+    min_value: 0
+    max_value: 365
+  
+  availability:
+    type: "string"
+    required: true
+    allowed_values: ["in_stock", "low_stock", "out_of_stock", "pre_order"]
+  
+  map_price:
+    type: "float"
+    required: false
+    min_value: 0
+  
+  weight_kg:
+    type: "float"
+    required: false
+    min_value: 0
+  
+  length_cm:
+    type: "float"
+    required: false
+    min_value: 0
+  
+  width_cm:
+    type: "float"
+    required: false
+    min_value: 0
+  
+  height_cm:
+    type: "float"
+    required: false
+    min_value: 0
+
+# Currency normalization
+currency:
+  default: "USD"
+  supported: ["USD", "EUR", "GBP", "CAD", "AUD"]
+  conversion_rates:
+    USD: 1.0
+    EUR: 1.1
+    GBP: 1.27
+    CAD: 0.74
+    AUD: 0.65
+
+# Unit normalization
+units:
+  weight:
+    default: "kg"
+    supported: ["kg", "g", "lb", "oz"]
+  
+  dimension:
+    default: "cm"
+    supported: ["cm", "m", "in", "ft"]
+
